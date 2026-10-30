@@ -93,6 +93,152 @@
     });
   }
 
+  /* ---------- Marcador animado da navegação ---------- */
+
+  if (nav) {
+    const navLinks = $$("a.nav__link", nav);
+    const inPageLinks = navLinks.filter((link) =>
+      (link.getAttribute("href") || "").startsWith("#")
+    );
+    const desktop = window.matchMedia("(min-width: 901px)");
+
+    const indicator = document.createElement("span");
+    indicator.className = "nav__indicator";
+    indicator.setAttribute("aria-hidden", "true");
+    nav.prepend(indicator);
+
+    let activeLink =
+      navLinks.find((link) => link.classList.contains("is-active")) || navLinks[0] || null;
+    let hoveredLink = null;
+    let spyLockedUntil = 0;
+    let spyLockTimer = 0;
+    let indicatorFrame = 0;
+
+    const drawIndicator = () => {
+      indicatorFrame = 0;
+
+      if (!desktop.matches) {
+        hoveredLink = null;
+        indicator.classList.remove("is-visible");
+        indicator.style.removeProperty("left");
+        indicator.style.removeProperty("width");
+        return;
+      }
+
+      const link = hoveredLink || activeLink;
+      if (!link) return;
+
+      /* Mede depois do layout para acompanhar fontes, zoom e mudanças de tela. */
+      const navRect = nav.getBoundingClientRect();
+      const linkRect = link.getBoundingClientRect();
+
+      indicator.style.left = `${linkRect.left - navRect.left}px`;
+      indicator.style.width = `${linkRect.width}px`;
+      indicator.classList.add("is-visible");
+    };
+
+    const refreshIndicator = () => {
+      if (indicatorFrame) return;
+      indicatorFrame = requestAnimationFrame(drawIndicator);
+    };
+
+    const setActive = (link) => {
+      if (!link) return;
+      activeLink = link;
+      navLinks.forEach((item) => item.classList.toggle("is-active", item === link));
+      if (!hoveredLink) refreshIndicator();
+    };
+
+    navLinks.forEach((link) => {
+      link.addEventListener("mouseenter", () => {
+        if (!desktop.matches) return;
+        hoveredLink = link;
+        refreshIndicator();
+      });
+    });
+
+    nav.addEventListener("mouseleave", () => {
+      hoveredLink = null;
+      refreshIndicator();
+    });
+
+    const sectionLinks = inPageLinks
+      .map((link) => {
+        const id = link.getAttribute("href").slice(1);
+        const section = id ? document.getElementById(id) : null;
+        return section ? { link, section } : null;
+      })
+      .filter(Boolean);
+
+    const updateActiveLink = () => {
+      if (!sectionLinks.length || performance.now() < spyLockedUntil) return;
+
+      const probe = (header ? header.offsetHeight : 0) + 80;
+      let current = sectionLinks[0];
+
+      sectionLinks.forEach((item) => {
+        if (item.section.getBoundingClientRect().top <= probe) current = item;
+      });
+
+      const atBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+
+      if (atBottom) current = sectionLinks[sectionLinks.length - 1];
+
+      setActive(current.link);
+    };
+
+    let scrollQueued = false;
+    const onScroll = () => {
+      if (scrollQueued) return;
+      scrollQueued = true;
+      requestAnimationFrame(() => {
+        scrollQueued = false;
+        updateActiveLink();
+      });
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    navLinks.forEach((link) => {
+      link.addEventListener("click", () => {
+        if (!inPageLinks.includes(link)) return;
+
+        setActive(link);
+
+        /* Segura o marcador no item clicado enquanto a rolagem suave acontece. */
+        spyLockedUntil = performance.now() + 1400;
+        clearTimeout(spyLockTimer);
+        spyLockTimer = window.setTimeout(() => {
+          spyLockedUntil = 0;
+          updateActiveLink();
+          refreshIndicator();
+        }, 1450);
+      });
+    });
+
+    window.addEventListener("resize", refreshIndicator, { passive: true });
+
+    if (desktop.addEventListener) {
+      desktop.addEventListener("change", refreshIndicator);
+    } else if (desktop.addListener) {
+      desktop.addListener(refreshIndicator);
+    }
+
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(refreshIndicator).observe(nav);
+    }
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(refreshIndicator);
+    }
+
+    requestAnimationFrame(() => {
+      updateActiveLink();
+      refreshIndicator();
+    });
+  }
+
   /* ---------- Animações de entrada ---------- */
 
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
